@@ -30,8 +30,11 @@ npx prisma generate
 echo ""
 echo "♻️  Restarting backend (port 3007)..."
 echo ""
+# Delete + start fresh each time rather than conditionally restart —
+# avoids pm2 replaying a stale/broken process definition from an
+# earlier failed deploy.
 pm2 delete eit-backend > /dev/null 2>&1 || true
-pm2 start src/server.js --name eit-backend --cwd "$APP_DIR/backend"
+pm2 start src/server.js --name eit-backend --cwd "$APP_DIR/backend" --node-args="--openssl-legacy-provider"
 
 # ───────────────── FRONTEND ─────────────────
 echo ""
@@ -48,11 +51,12 @@ npm run build
 echo ""
 echo "♻️  Restarting frontend (port 3008)..."
 echo ""
+# Global install, not local node_modules/.bin — sidesteps whatever is
+# causing the .bin symlink to not resolve correctly on this server.
+npm install -g serve
+
 pm2 delete eit-frontend > /dev/null 2>&1 || true
-pm2 start "$APP_DIR/frontend/node_modules/.bin/serve" \
-  --name eit-frontend \
-  --cwd "$APP_DIR/frontend" \
-  -- -s dist -l 3008
+pm2 start serve --name eit-frontend -- -s "$APP_DIR/frontend/dist" -l 3008
 
 pm2 save
 
