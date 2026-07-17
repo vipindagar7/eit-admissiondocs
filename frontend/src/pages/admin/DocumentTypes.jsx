@@ -123,7 +123,7 @@ export default function AdminDocumentTypes() {
                   type="number"
                   min={1}
                   max={20480}
-                  step={100}
+                  step={1}
                   value={form.maxSizeKB}
                   onChange={(e) => setForm({ ...form, maxSizeKB: Number(e.target.value) })}
                   className="h-8 w-24 rounded-md border border-gray-300 px-2"
