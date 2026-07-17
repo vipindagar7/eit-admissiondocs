@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StudentStatus {
+  PENDING
+  SUBMITTED
+  UNDER_REVIEW
+  RESUBMISSION_REQUIRED
+  VERIFIED
+  ADMITTED
+}
+
+enum StaffRole {
+  ADMIN
+  VERIFIER
+}
+
+enum FileAction {
+  DELETE
+  REPLACE
+}
+
+model Session {
+  id             String    @id @default(uuid())
+  name           String
+  year           Int
+  batch          String?
+  sheetId        String?
+  sheetRange     String?
+  lastImportedAt DateTime?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  students       Student[]
+
+  @@unique([year, batch])
+}
+
+model Student {
+  id                   String    @id @default(uuid())
+  sessionId            String
+  admissionNo          String
+  name                 String
+  phone                String
+  email                String?
+  dob                  DateTime?
+  branch               String?
+  status               StudentStatus @default(PENDING)
+  blocked              Boolean   @default(false)
+  blockedAt            DateTime?
+  blockedReason        String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  // Admission-tracking fields, mirroring the admissions spreadsheet —
+  // all optional since not every session/row will have every column.
+  srNo                 Int?
+  fileNo               String?
+  fatherName           String?
+  phone2               String?
+  preference1          String?
+  preference2          String?
+  preference3          String?
+  stateQuota           String?
+  category             String?
+  religion             String?
+  jeeRank              String?
+  cuetRank             String?
+  cetRank              String?
+  ipuFormFilledStatus  String?
+  seatAllotmentStatus  String?
+  allotmentRound       String?
+  seatAllotedCourse    String?
+  admissionStatus      String?
+  feeStatus            String?
+  partAcademicFee      String?
+
+  session       Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  documents     Document[]
+  statusLogs    StatusLog[]
+  answers       StudentAnswer[]
+
+  @@unique([sessionId, admissionNo])
+  @@unique([sessionId, phone])
+  @@index([status])
+  @@index([blocked])
+}
+
+model DocumentType {
+  id               String     @id @default(uuid())
+  name             String     @unique
+  description      String?
+  required         Boolean    @default(true)
+  allowedMimeTypes String     @default("application/pdf,image/jpeg,image/png") // comma-separated
+  maxSizeKB        Int        @default(5120) // 5MB expressed in KB
+  createdAt        DateTime   @default(now())
+
+  documents        Document[]
+}
+
+// A text question the admin adds to the form (e.g. "Category", "Aadhar number") —
+// separate from DocumentType since it collects a typed answer, not a file.
+model FormQuestion {
+  id          String          @id @default(uuid())
+  label       String
+  description String?
+  required    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+
+  answers     StudentAnswer[]
+}
+
+model StudentAnswer {
+  id         String       @id @default(uuid())
+  studentId  String
+  questionId String
+  answerText String
+  answeredAt DateTime     @default(now())
+
+  student    Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  question   FormQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, questionId])
+}
+
+model Document {
+  id               String       @id @default(uuid())
+  studentId        String
+  documentTypeId   String
+  originalFilename String
+  storedFilename   String
+  filePath         String
+  mimeType         String
+  sizeBytes        Int
+  uploadedAt       DateTime     @default(now())
+
+  student          Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  documentType     DocumentType @relation(fields: [documentTypeId], references: [id])
+
+  @@unique([studentId, documentTypeId])
+}
+
+model StaffUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  role         StaffRole @default(VERIFIER)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  statusLogs   StatusLog[]
+  downloadLogs DownloadLog[]
+  fileLogs     AdminFileLog[]
+}
+
+model StatusLog {
+  id         String        @id @default(uuid())
+  studentId  String
+  staffId    String
+  oldStatus  StudentStatus
+  newStatus  StudentStatus
+  note       String?
+  changedAt  DateTime      @default(now())
+
+  student    Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  staff      StaffUser @relation(fields: [staffId], references: [id])
+}
+
+model DownloadLog {
+  id           String   @id @default(uuid())
+  staffId      String
+  documentId   String
+  downloadedAt DateTime @default(now())
+
+  staff        StaffUser @relation(fields: [staffId], references: [id])
+}
+
+// Note: documentId is intentionally a plain column with NO enforced
+// foreign key to Document (same pattern as DownloadLog) — a DELETE
+// action removes the Document row in the same transaction that writes
+// this log entry, so a hard FK would make that delete fail.
+model AdminFileLog {
+  id         String     @id @default(uuid())
+  staffId    String
+  documentId String
+  action     FileAction
+  detail     String?
+  actedAt    DateTime   @default(now())
+
+  staff      StaffUser @relation(fields: [staffId], references: [id])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
