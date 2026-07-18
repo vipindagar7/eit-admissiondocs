@@ -9,6 +9,8 @@ export default function AdminFormQuestions() {
   const [form, setForm] = useState({ label: '', description: '', required: true });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
 
   async function load() {
     const res = await api.get('/admin/form-questions');
@@ -59,6 +61,26 @@ export default function AdminFormQuestions() {
     }
   }
 
+  function startEdit(q) {
+    setEditingId(q.id);
+    setEditForm({ label: q.label, description: q.description || '', required: q.required });
+  }
+
+  async function handleSaveEdit(qId) {
+    setBusy(true);
+    setError('');
+    try {
+      await api.patch(`/admin/form-questions/${qId}`, editForm);
+      setEditingId(null);
+      setEditForm(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="animate-in fade-in space-y-5 duration-300">
       <div>
@@ -98,21 +120,49 @@ export default function AdminFormQuestions() {
       <div className="space-y-2">
         {questions.map((q) => (
           <Card key={q.id}>
-            <CardContent className="flex items-center justify-between p-4 text-sm">
-              <div>
-                <p className="font-medium text-gray-900">
-                  {q.label} {q.required && <span className="text-red-500">*</span>}
-                </p>
-                {q.description && <p className="text-xs text-gray-600">{q.description}</p>}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => toggleRequired(q)}>
-                  {q.required ? 'Make optional' : 'Make mandatory'}
-                </Button>
-                <Button size="sm" variant="destructive" disabled={busy} onClick={() => handleDelete(q)}>
-                  Delete
-                </Button>
-              </div>
+            <CardContent className="p-4 text-sm">
+              {editingId === q.id ? (
+                <div className="space-y-3">
+                  <Input
+                    value={editForm.label}
+                    onChange={(e) => setEditForm({ ...editForm, label: e.target.value })}
+                    placeholder="Question"
+                  />
+                  <Input
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    placeholder="Description / instructions (optional)"
+                  />
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={editForm.required} onChange={(e) => setEditForm({ ...editForm, required: e.target.checked })} />
+                    Mandatory
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" disabled={busy} onClick={() => handleSaveEdit(q.id)}>Save</Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => { setEditingId(null); setEditForm(null); }}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {q.label} {q.required && <span className="text-red-500">*</span>}
+                    </p>
+                    {q.description && <p className="text-xs text-gray-600">{q.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => startEdit(q)}>
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => toggleRequired(q)}>
+                      {q.required ? 'Make optional' : 'Make mandatory'}
+                    </Button>
+                    <Button size="sm" variant="destructive" disabled={busy} onClick={() => handleDelete(q)}>
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

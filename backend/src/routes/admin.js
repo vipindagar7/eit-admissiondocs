@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { requireStaffAuth, requireStaffRole } from '../middleware/auth.js';
-import { readDocumentFile, deleteDocumentFile, saveDocumentFile, verifyMagicBytes, validateAgainstDocumentType, buildDisplayFilename } from '../lib/storage.js';
+import { readDocumentFile, deleteDocumentFile, saveDocumentFile, saveTemplateFile, verifyMagicBytes, validateAgainstDocumentType, buildDisplayFilename } from '../lib/storage.js';
+import { buildStudentsWorkbook } from '../lib/excelExport.js';
 import { importStudentsForSession } from '../lib/sheets.js';
 import { importStudentsFromCsv } from '../lib/csvImport.js';
 import { requestStaffOtp, verifyStaffOtp } from '../lib/staffOtp.js';
@@ -301,7 +302,7 @@ const documentTypeSchema = z.object({
 });
 
 adminRouter.get('/document-types', requireStaffAuth, async (req, res) => {
-  const documentTypes = await prisma.documentType.findMany({ orderBy: { createdAt: 'asc' } });
+  const documentTypes = await prisma.documentType.findMany({ orderBy: { order: 'asc' } });
   res.json({ documentTypes });
 });
 
@@ -309,10 +310,29 @@ adminRouter.post('/document-types', requireStaffAuth, requireStaffRole('ADMIN'),
   const parsed = documentTypeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid document type', detail: parsed.error.flatten() });
 
+  const last = await prisma.documentType.findFirst({ orderBy: { order: 'desc' } });
+  const nextOrder = (last?.order ?? -1) + 1;
+
   const documentType = await prisma.documentType.create({
-    data: { ...parsed.data, allowedMimeTypes: parsed.data.allowedMimeTypes.join(',') },
+    data: { ...parsed.data, allowedMimeTypes: parsed.data.allowedMimeTypes.join(','), order: nextOrder },
   });
   res.status(201).json({ documentType });
+});
+
+// --- Reorder (drag-and-drop) — body: { orderedIds: string[] } in the
+// desired display order. Must be registered before /document-types/:id
+// so "reorder" doesn't get captured as an :id. ---
+adminRouter.patch('/document-types/reorder', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  const parsed = z.object({ orderedIds: z.array(z.string()).min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+
+  await prisma.$transaction(
+    parsed.data.orderedIds.map((id, index) =>
+      prisma.documentType.update({ where: { id }, data: { order: index } })
+    )
+  );
+
+  res.json({ message: 'Order updated' });
 });
 
 adminRouter.patch('/document-types/:id', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
@@ -340,6 +360,48 @@ adminRouter.delete('/document-types/:id', requireStaffAuth, requireStaffRole('AD
 
   await prisma.documentType.delete({ where: { id: req.params.id } });
   res.json({ message: 'Document type deleted' });
+});
+
+// --- Upload/replace a downloadable template for a document type (admin
+// only) — e.g. a blank undertaking form students download, fill, and
+// upload back as their submission. ---
+adminRouter.post('/document-types/:id/template', requireStaffAuth, requireStaffRole('ADMIN'), upload.single('file'), async (req, res) => {
+  const docType = await prisma.documentType.findUnique({ where: { id: req.params.id } });
+  if (!docType) return res.status(404).json({ error: 'Not found' });
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!verifyMagicBytes(file.buffer, file.mimetype)) {
+    return res.status(400).json({ error: 'File content does not match its declared type' });
+  }
+
+  const oldTemplatePath = docType.templateFilePath;
+  const { filePath } = await saveTemplateFile({ documentTypeId: docType.id, buffer: file.buffer, mimeType: file.mimetype });
+
+  await prisma.documentType.update({
+    where: { id: docType.id },
+    data: { templateFilePath: filePath, templateOriginalName: file.originalname, templateMimeType: file.mimetype },
+  });
+
+  if (oldTemplatePath) await deleteDocumentFile(oldTemplatePath);
+
+  res.json({ message: 'Template uploaded' });
+});
+
+// --- Download a document type's template (any staff, for reference) ---
+adminRouter.get('/document-types/:id/template', requireStaffAuth, async (req, res) => {
+  const docType = await prisma.documentType.findUnique({ where: { id: req.params.id } });
+  if (!docType?.templateFilePath) return res.status(404).json({ error: 'No template uploaded for this document' });
+
+  try {
+    const buffer = await readDocumentFile(docType.templateFilePath);
+    res.setHeader('Content-Type', docType.templateMimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${docType.templateOriginalName}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('[admin/document-types/template]', err);
+    res.status(500).json({ error: 'Could not read template file' });
+  }
 });
 
 // ============================================================
@@ -379,6 +441,63 @@ adminRouter.delete('/form-questions/:id', requireStaffAuth, requireStaffRole('AD
 });
 
 // ============================================================
+// NOTICE BOARD — admin-posted announcements shown to students
+// ============================================================
+const noticeSchema = z.object({
+  title: z.string().min(1),
+  content: z.string().min(1),
+  active: z.boolean().default(true),
+});
+
+adminRouter.get('/notices', requireStaffAuth, async (req, res) => {
+  const notices = await prisma.notice.findMany({ orderBy: { createdAt: 'desc' } });
+  res.json({ notices });
+});
+
+adminRouter.post('/notices', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  const parsed = noticeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid notice' });
+
+  const notice = await prisma.notice.create({ data: parsed.data });
+  res.status(201).json({ notice });
+});
+
+adminRouter.patch('/notices/:id', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  const parsed = noticeSchema.partial().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid notice' });
+
+  const notice = await prisma.notice.update({ where: { id: req.params.id }, data: parsed.data });
+  res.json({ notice });
+});
+
+adminRouter.delete('/notices/:id', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  await prisma.notice.delete({ where: { id: req.params.id } });
+  res.json({ message: 'Notice deleted' });
+});
+
+// ============================================================
+// ACCESS REQUESTS — students whose number wasn't found at login,
+// asking to be added
+// ============================================================
+adminRouter.get('/access-requests', requireStaffAuth, async (req, res) => {
+  const requests = await prisma.accessRequest.findMany({ orderBy: { createdAt: 'desc' } });
+  res.json({ requests });
+});
+
+adminRouter.patch('/access-requests/:id', requireStaffAuth, async (req, res) => {
+  const parsed = z.object({ resolved: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+
+  const request = await prisma.accessRequest.update({ where: { id: req.params.id }, data: parsed.data });
+  res.json({ request });
+});
+
+adminRouter.delete('/access-requests/:id', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  await prisma.accessRequest.delete({ where: { id: req.params.id } });
+  res.json({ message: 'Request deleted' });
+});
+
+// ============================================================
 // STUDENTS — list/search, detail, block/unblock (individual + bulk), status
 // ============================================================
 adminRouter.get('/students', requireStaffAuth, async (req, res) => {
@@ -404,6 +523,36 @@ adminRouter.get('/students', requireStaffAuth, async (req, res) => {
   });
 
   res.json({ students });
+});
+
+// --- Export the student list + per-document status to Excel ---
+adminRouter.get('/students/export', requireStaffAuth, async (req, res) => {
+  const { status, sessionId, blocked } = req.query;
+
+  const [students, documentTypes] = await Promise.all([
+    prisma.student.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(blocked !== undefined ? { blocked: blocked === 'true' } : {}),
+      },
+      include: { documents: true },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.documentType.findMany({ orderBy: { createdAt: 'asc' } }),
+  ]);
+
+  try {
+    const workbook = await buildStudentsWorkbook(students, documentTypes);
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="students_export.xlsx"');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('[admin/students/export]', err);
+    res.status(500).json({ error: 'Could not generate export' });
+  }
 });
 
 adminRouter.get('/students/:id', requireStaffAuth, async (req, res) => {
@@ -686,9 +835,30 @@ adminRouter.post('/staff', requireStaffAuth, requireStaffRole('ADMIN'), async (r
 });
 
 adminRouter.patch('/staff/:id', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
-  const parsed = z.object({ active: z.boolean().optional(), role: z.enum(['ADMIN', 'VERIFIER']).optional() }).safeParse(req.body);
+  const parsed = z
+    .object({
+      active: z.boolean().optional(),
+      role: z.enum(['ADMIN', 'VERIFIER']).optional(),
+      email: z.string().email().optional(),
+      password: z.string().min(8).optional(),
+    })
+    .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
 
-  const staff = await prisma.staffUser.update({ where: { id: req.params.id }, data: parsed.data });
-  res.json({ staff: { id: staff.id, email: staff.email, role: staff.role, active: staff.active } });
+  const { password, ...rest } = parsed.data;
+  const data = { ...rest };
+  if (password) {
+    data.passwordHash = await bcrypt.hash(password, 12);
+  }
+
+  try {
+    const staff = await prisma.staffUser.update({ where: { id: req.params.id }, data });
+    res.json({ staff: { id: staff.id, email: staff.email, role: staff.role, active: staff.active } });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'That email is already in use by another staff account' });
+    }
+    console.error('[admin/staff/patch]', err);
+    res.status(500).json({ error: 'Could not update staff account' });
+  }
 });

@@ -98,6 +98,28 @@ export async function deleteDocumentFile(filePath) {
 }
 
 /**
+ * Saves an admin-uploaded template file (e.g. a blank undertaking form)
+ * for a DocumentType — separate storage area from student uploads,
+ * since these are shared/reusable rather than per-student.
+ */
+export async function saveTemplateFile({ documentTypeId, buffer, mimeType }) {
+  const spec = ALLOWED_TYPES[mimeType];
+  if (!spec) {
+    throw new Error(`Unsupported file type: ${mimeType}`);
+  }
+
+  const dir = path.join(env.upload.root, 'templates');
+  await fs.mkdir(dir, { recursive: true, mode: 0o750 });
+
+  const storedFilename = `${documentTypeId}-${crypto.randomUUID()}${spec.ext}`;
+  const filePath = path.join(dir, storedFilename);
+
+  await fs.writeFile(filePath, buffer, { mode: 0o640 });
+
+  return { filePath };
+}
+
+/**
  * Builds the filename served to staff on download, using an admin-defined
  * template (stored in the Setting table) with placeholders like:
  *   {admissionNo} {name} {docType} {year} {session} {batch} {ext}

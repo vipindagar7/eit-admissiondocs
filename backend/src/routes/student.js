@@ -20,12 +20,12 @@ studentRouter.post('/request-otp', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid phone number' });
   const { phone } = parsed.data;
 
-  // A phone may exist in multiple sessions (different admission years) —
-  // OTP itself is phone-scoped, session selection happens after verify.
+  // Deliberate product decision: tell the student directly if their
+  // number isn't registered (rather than the vague "if registered..."
+  // message), so they can request access instead of being stuck.
   const student = await prisma.student.findFirst({ where: { phone } });
   if (!student) {
-    // Deliberately vague — don't reveal whether a phone is registered.
-    return res.status(200).json({ message: 'If this number is registered, an OTP has been sent.' });
+    return res.status(404).json({ code: 'NOT_FOUND', error: 'This mobile number is not registered.' });
   }
 
   if (student.blocked) {
@@ -42,6 +42,21 @@ studentRouter.post('/request-otp', async (req, res) => {
     console.error('[student/request-otp]', err);
     return res.status(500).json({ error: 'Could not send OTP right now.' });
   }
+});
+
+// --- Access request: submitted when a phone number isn't registered,
+// so admin can review and add the student manually. No auth required —
+// the whole point is the student can't log in yet. ---
+const accessRequestSchema = z.object({
+  phone: z.string().min(8).max(15),
+  name: z.string().max(120).optional(),
+});
+studentRouter.post('/access-requests', async (req, res) => {
+  const parsed = accessRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+
+  await prisma.accessRequest.create({ data: parsed.data });
+  res.status(201).json({ message: 'Request received. The admissions office will contact you.' });
 });
 
 // --- OTP verify -> issue session cookie ------------------------------------
@@ -96,7 +111,7 @@ studentRouter.get('/documents', requireStudentAuth, async (req, res) => {
   if (!student || student.blocked) return res.status(403).json({ error: 'Access blocked' });
 
   const [docTypes, uploaded] = await Promise.all([
-    prisma.documentType.findMany({ orderBy: { name: 'asc' } }),
+    prisma.documentType.findMany({ orderBy: { order: 'asc' } }),
     prisma.document.findMany({ where: { studentId: req.student.id } }),
   ]);
 
@@ -110,6 +125,7 @@ studentRouter.get('/documents', requireStudentAuth, async (req, res) => {
     uploaded: uploadedByType.has(dt.id),
     uploadedAt: uploadedByType.get(dt.id)?.uploadedAt ?? null,
     mimeType: uploadedByType.get(dt.id)?.mimeType ?? null,
+    hasTemplate: Boolean(dt.templateFilePath),
   }));
 
   res.json({ documents: result, status: student.status });
@@ -203,6 +219,28 @@ studentRouter.get('/documents/:documentTypeId/preview', requireStudentAuth, asyn
     console.error('[student/preview]', err);
     res.status(500).json({ error: 'Could not read file' });
   }
+});
+
+// --- Download a document type's template (student, only if one exists) ---
+studentRouter.get('/documents/:documentTypeId/template', requireStudentAuth, async (req, res) => {
+  const docType = await prisma.documentType.findUnique({ where: { id: req.params.documentTypeId } });
+  if (!docType?.templateFilePath) return res.status(404).json({ error: 'No template available for this document' });
+
+  try {
+    const buffer = await readDocumentFile(docType.templateFilePath);
+    res.setHeader('Content-Type', docType.templateMimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${docType.templateOriginalName}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('[student/template]', err);
+    res.status(500).json({ error: 'Could not read template file' });
+  }
+});
+
+// --- Notice board (read-only for students) ---
+studentRouter.get('/notices', requireStudentAuth, async (req, res) => {
+  const notices = await prisma.notice.findMany({ where: { active: true }, orderBy: { createdAt: 'desc' } });
+  res.json({ notices });
 });
 
 // --- Profile (read-only summary of who they are + their status) ---

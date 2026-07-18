@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card.jsx';
+import { Card, CardContent } from '../../components/ui/card.jsx';
 import { Input } from '../../components/ui/input.jsx';
 import { Button } from '../../components/ui/button.jsx';
 import { Badge } from '../../components/ui/badge.jsx';
@@ -11,6 +11,10 @@ export default function AdminStaff() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editRole, setEditRole] = useState('VERIFIER');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
 
   async function load() {
     try {
@@ -46,6 +50,30 @@ export default function AdminStaff() {
     setBusy(true);
     try {
       await api.patch(`/admin/staff/${staff.id}`, { active: !staff.active });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(staff) {
+    setEditingId(staff.id);
+    setEditRole(staff.role);
+    setEditEmail(staff.email);
+    setEditPassword('');
+  }
+
+  async function handleSaveEdit(staffId) {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = { role: editRole, email: editEmail };
+      if (editPassword) payload.password = editPassword;
+      await api.patch(`/admin/staff/${staffId}`, payload);
+      setEditingId(null);
+      setEditPassword('');
       await load();
     } catch (err) {
       setError(err.message);
@@ -103,17 +131,58 @@ export default function AdminStaff() {
           <h2 className="text-sm font-medium text-gray-500">All staff</h2>
           {staffList.map((s) => (
             <Card key={s.id}>
-              <CardContent className="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <p className="font-medium text-gray-900">{s.email}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant={s.role === 'ADMIN' ? 'default' : 'gray'}>{s.role}</Badge>
-                    {s.active === false && <Badge variant="red">inactive</Badge>}
+              <CardContent className="p-3 text-sm">
+                {editingId === s.id ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="Email"
+                      />
+                      <Input
+                        type="password"
+                        minLength={8}
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        placeholder="New password (leave blank to keep current)"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <select
+                        value={editRole}
+                        onChange={(e) => setEditRole(e.target.value)}
+                        className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm"
+                      >
+                        <option value="VERIFIER">Verifier</option>
+                        <option value="ADMIN">Admin</option>
+                      </select>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" disabled={busy} onClick={() => handleSaveEdit(s.id)}>Save</Button>
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditingId(null)}>Cancel</Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => toggleActive(s)}>
-                  {s.active === false ? 'Reactivate' : 'Deactivate'}
-                </Button>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{s.email}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <Badge variant={s.role === 'ADMIN' ? 'default' : 'gray'}>{s.role}</Badge>
+                        {s.active === false && <Badge variant="red">inactive</Badge>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => startEdit(s)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => toggleActive(s)}>
+                        {s.active === false ? 'Reactivate' : 'Deactivate'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

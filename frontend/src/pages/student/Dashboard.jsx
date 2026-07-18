@@ -51,7 +51,8 @@ function fadeIn(delayMs = 0) {
     className: cn(
       'animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both',
       // Glassmorphism: translucent + blurred background instead of solid white
-      'border-white/50 bg-white/50 shadow-xl shadow-black/5 backdrop-blur-sm'),
+      'border-white/50 bg-white/50 shadow-xl shadow-black/5 backdrop-blur-lg'
+    ),
     style: { animationDelay: `${delayMs}ms` },
   };
 }
@@ -69,13 +70,15 @@ export default function StudentDashboard() {
   const [savingPref, setSavingPref] = useState(null);
   const [showReview, setShowReview] = useState(false);
   const [preview, setPreview] = useState(null); // { src, mimeType, filename } | null
+  const [notices, setNotices] = useState([]);
 
   async function load() {
     try {
-      const [profileRes, docsRes, questionsRes] = await Promise.all([
+      const [profileRes, docsRes, questionsRes, noticesRes] = await Promise.all([
         api.get('/student/profile'),
         api.get('/student/documents'),
         api.get('/student/questions'),
+        api.get('/student/notices'),
       ]);
       setProfile(profileRes.student);
       setPreferences({
@@ -85,6 +88,7 @@ export default function StudentDashboard() {
       });
       setDocuments(docsRes.documents);
       setQuestions(questionsRes.questions);
+      setNotices(noticesRes.notices);
     } catch (err) {
       if (err.status === 401 || err.status === 403) navigate('/student/login');
       else setError(err.message);
@@ -109,6 +113,20 @@ export default function StudentDashboard() {
       setError(err.message);
     } finally {
       setUploadingId(null);
+    }
+  }
+
+  async function handleTemplateDownload(documentTypeId, name) {
+    try {
+      const { blob, filename } = await api.download(`/student/documents/${documentTypeId}/template`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -202,8 +220,26 @@ export default function StudentDashboard() {
       <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 sm:px-6">
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</p>}
 
+        {/* Notice board */}
+        {notices.length > 0 && (
+          <Card {...fadeIn(0)}>
+            <CardHeader>
+              <CardTitle>Notice Board</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {notices.map((n) => (
+                <div key={n.id} className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                  <p className="text-sm font-medium text-gray-900">{n.title}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{n.content}</p>
+                  <p className="mt-1 text-xs text-gray-400">{new Date(n.createdAt).toLocaleDateString()}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Mandatory read-only details */}
-        <Card {...fadeIn(0)}>
+        <Card {...fadeIn(25)}>
           <CardHeader>
             <CardTitle>Your Admission Details</CardTitle>
             <CardDescription>From your admission record — contact the office if anything here looks wrong.</CardDescription>
@@ -217,6 +253,31 @@ export default function StudentDashboard() {
                 </div>
               ))}
             </dl>
+          </CardContent>
+        </Card>
+
+        {/* Preferences (student's own choice) */}
+        <Card {...fadeIn(75)}>
+          <CardHeader>
+            <CardTitle>Your Course Preferences</CardTitle>
+            <CardDescription>Choose up to three, in order of preference — separate from the course allotted above.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {PREFERENCE_FIELDS.map((f) => (
+                <div key={f.key}>
+                  <label className="text-xs font-medium text-gray-500">{f.label}</label>
+                  <input
+                    value={preferences[f.key]}
+                    onChange={(e) => setPreferences({ ...preferences, [f.key]: e.target.value })}
+                    onBlur={(e) => handleSavePreference(f.key, e.target.value)}
+                    placeholder="e.g. B.Tech CSE"
+                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm transition focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
+                  />
+                  {savingPref === f.key && <p className="mt-1 text-xs text-gray-400">Saving...</p>}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -260,13 +321,15 @@ export default function StudentDashboard() {
               {documents.map((doc) => (
                 <div
                   key={doc.documentTypeId}
-                  className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${doc.uploaded ? 'border-green-200 bg-green-50/40' : 'border-gray-200'
-                    }`}
+                  className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
+                    doc.uploaded ? 'border-green-200 bg-green-50/40' : 'border-gray-200'
+                  }`}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs transition-colors ${doc.uploaded ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'
-                        }`}
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs transition-colors ${
+                        doc.uploaded ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'
+                      }`}
                     >
                       {doc.uploaded ? '✓' : '·'}
                     </span>
@@ -281,6 +344,14 @@ export default function StudentDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {doc.hasTemplate && (
+                      <button
+                        onClick={() => handleTemplateDownload(doc.documentTypeId, doc.name)}
+                        className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+                      >
+                        Download template
+                      </button>
+                    )}
                     {doc.uploaded && (
                       <button
                         onClick={() =>
@@ -296,8 +367,9 @@ export default function StudentDashboard() {
                       </button>
                     )}
                     <label
-                      className={`inline-flex h-8 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-brand-600 px-3 text-sm text-brand-600 transition-colors hover:bg-brand-50 ${uploadingId === doc.documentTypeId ? 'pointer-events-none opacity-50' : ''
-                        }`}
+                      className={`inline-flex h-8 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-brand-600 px-3 text-sm text-brand-600 transition-colors hover:bg-brand-50 ${
+                        uploadingId === doc.documentTypeId ? 'pointer-events-none opacity-50' : ''
+                      }`}
                     >
                       {uploadingId === doc.documentTypeId ? 'Uploading...' : doc.uploaded ? 'Replace' : 'Upload'}
                       <input

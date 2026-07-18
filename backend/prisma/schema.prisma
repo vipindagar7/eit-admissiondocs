@@ -98,9 +98,35 @@ model DocumentType {
   required         Boolean    @default(true)
   allowedMimeTypes String     @default("application/pdf,image/jpeg,image/png") // comma-separated
   maxSizeKB        Int        @default(5120) // 5MB expressed in KB
+  order            Int        @default(0) // admin-controlled display order (drag-and-drop)
   createdAt        DateTime   @default(now())
 
+  // Optional downloadable template (e.g. a blank form/undertaking) that
+  // students fill out and upload back as their submission for this type.
+  templateFilePath     String?
+  templateOriginalName String?
+  templateMimeType      String?
+
   documents        Document[]
+}
+
+// Admin-posted announcements shown on the student dashboard.
+model Notice {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// Submitted by a student whose phone number isn't found at login —
+// lets them ask to be added, without needing to already have an account.
+model AccessRequest {
+  id        String   @id @default(uuid())
+  phone     String
+  name      String?
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 // A text question the admin adds to the form (e.g. "Category", "Aadhar number") —

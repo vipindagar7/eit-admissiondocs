@@ -9,9 +9,11 @@ import { cn } from '../lib/utils.js';
 
 const NAV_ITEMS = [
   { to: '/admin/students', label: 'Students' },
+  { to: '/admin/access-requests', label: 'Requests' },
   { to: '/admin/sessions', label: 'Sessions', adminOnly: true },
   { to: '/admin/document-types', label: 'Documents', adminOnly: true },
   { to: '/admin/form-questions', label: 'Questions', adminOnly: true },
+  { to: '/admin/notices', label: 'Notices', adminOnly: true },
   { to: '/admin/staff', label: 'Staff', adminOnly: true },
   { to: '/admin/settings', label: 'Settings', adminOnly: true },
 ];
