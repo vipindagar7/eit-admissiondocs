@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import Logo from '../../components/Logo.jsx';
@@ -13,6 +13,13 @@ export default function StudentLogin() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
   async function requestOtp(e) {
     e.preventDefault();
@@ -22,6 +29,7 @@ export default function StudentLogin() {
       const res = await api.post('/student/request-otp', { phone });
       setMessage(res.message);
       setStep('otp');
+      setResendCooldown(60);
     } catch (err) {
       if (err.status === 404) {
         setStep('not_found');
@@ -34,11 +42,13 @@ export default function StudentLogin() {
   }
 
   async function handleResend() {
+    if (resendCooldown > 0) return;
     setError('');
     setResending(true);
     try {
       const res = await api.post('/student/request-otp', { phone });
       setMessage(res.message);
+      setResendCooldown(60);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -200,7 +210,7 @@ export default function StudentLogin() {
             <div className="flex items-center justify-between text-sm">
               <button
                 type="button"
-                onClick={() => setStep('phone')}
+                onClick={() => { setStep('phone'); setResendCooldown(0); }}
                 className="text-gray-500 hover:text-brand-600"
               >
                 Change number
@@ -208,10 +218,10 @@ export default function StudentLogin() {
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={resending}
-                className="text-brand-600 hover:underline disabled:opacity-50"
+                disabled={resending || resendCooldown > 0}
+                className="text-brand-600 hover:underline disabled:opacity-50 disabled:no-underline"
               >
-                {resending ? 'Sending...' : 'Resend OTP'}
+                {resending ? 'Sending...' : resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : 'Resend OTP'}
               </button>
             </div>
           </form>
