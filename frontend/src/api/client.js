@@ -5,6 +5,11 @@
 // is deployed on a different origin than the backend.
 const BASE = `${import.meta.env.VITE_API_BASE ?? ''}/api`;
 
+// These admin endpoints return 401 for reasons OTHER than an
+// expired/invalid session (wrong password, wrong OTP) — a redirect there
+// would kick the user out of the login screen they're actively using.
+const ADMIN_AUTH_FLOW_ENDPOINTS = ['/admin/login', '/admin/login/verify-otp', '/admin/unlock'];
+
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
@@ -16,6 +21,15 @@ async function request(path, options = {}) {
   const data = isJson ? await res.json() : await res.blob();
 
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      path.startsWith('/admin') &&
+      !ADMIN_AUTH_FLOW_ENDPOINTS.includes(path) &&
+      !window.location.pathname.startsWith('/admin/login')
+    ) {
+      window.location.href = '/admin/login';
+    }
+
     const message = isJson ? data?.error || 'Request failed' : 'Request failed';
     const err = new Error(message);
     err.status = res.status;
@@ -35,7 +49,12 @@ export const api = {
   // For file downloads, where we need the raw Response to read headers/blob.
   async download(path) {
     const res = await fetch(`${BASE}${path}`, { credentials: 'include' });
-    if (!res.ok) throw new Error('Download failed');
+    if (!res.ok) {
+      if (res.status === 401 && path.startsWith('/admin') && !window.location.pathname.startsWith('/admin/login')) {
+        window.location.href = '/admin/login';
+      }
+      throw new Error('Download failed');
+    }
     const blob = await res.blob();
     const disposition = res.headers.get('content-disposition') || '';
     const match = disposition.match(/filename="(.+)"/);

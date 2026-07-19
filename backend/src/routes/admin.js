@@ -529,21 +529,22 @@ adminRouter.get('/students', requireStaffAuth, async (req, res) => {
 adminRouter.get('/students/export', requireStaffAuth, async (req, res) => {
   const { status, sessionId, blocked } = req.query;
 
-  const [students, documentTypes] = await Promise.all([
+  const [students, documentTypes, formQuestions] = await Promise.all([
     prisma.student.findMany({
       where: {
         ...(status ? { status } : {}),
         ...(sessionId ? { sessionId } : {}),
         ...(blocked !== undefined ? { blocked: blocked === 'true' } : {}),
       },
-      include: { documents: true },
+      include: { documents: true, answers: true },
       orderBy: { createdAt: 'desc' },
     }),
-    prisma.documentType.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.documentType.findMany({ orderBy: { order: 'asc' } }),
+    prisma.formQuestion.findMany({ orderBy: { createdAt: 'asc' } }),
   ]);
 
   try {
-    const workbook = await buildStudentsWorkbook(students, documentTypes);
+    const workbook = await buildStudentsWorkbook(students, documentTypes, formQuestions);
     const buffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
