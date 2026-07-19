@@ -84,11 +84,28 @@ model Student {
   documents     Document[]
   statusLogs    StatusLog[]
   answers       StudentAnswer[]
+  uploadAttemptLogs UploadAttemptLog[]
 
   @@unique([sessionId, admissionNo])
   @@unique([sessionId, phone])
   @@index([status])
   @@index([blocked])
+}
+
+// Records every FAILED upload attempt (wrong file type, too large, magic
+// bytes mismatch, etc.) so admin can see exactly why a student is stuck,
+// instead of relying on the student to accurately describe the error.
+model UploadAttemptLog {
+  id                 String   @id @default(uuid())
+  studentId          String
+  documentTypeId     String?
+  attemptedFilename  String?
+  attemptedMimeType  String?
+  attemptedSizeBytes Int?
+  errorMessage       String
+  createdAt          DateTime @default(now())
+
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }
 
 model DocumentType {

@@ -149,60 +149,88 @@ studentRouter.post('/documents/:documentTypeId/upload', requireStudentAuth, uplo
   const docType = await prisma.documentType.findUnique({ where: { id: documentTypeId } });
   if (!docType) return res.status(404).json({ error: 'Unknown document type' });
 
+  async function logFailure(errorMessage) {
+    try {
+      await prisma.uploadAttemptLog.create({
+        data: {
+          studentId: student.id,
+          documentTypeId,
+          attemptedFilename: file.originalname,
+          attemptedMimeType: file.mimetype,
+          attemptedSizeBytes: file.size,
+          errorMessage,
+        },
+      });
+    } catch (logErr) {
+      console.error('[upload-attempt-log]', logErr);
+    }
+  }
+
   if (!verifyMagicBytes(file.buffer, file.mimetype)) {
-    return res.status(400).json({ error: 'File content does not match its declared type' });
+    const message = 'File content does not match its declared type';
+    await logFailure(message);
+    return res.status(400).json({ error: message });
   }
 
   const check = validateAgainstDocumentType(docType, { mimeType: file.mimetype, sizeBytes: file.size });
-  if (!check.ok) return res.status(400).json({ error: check.error });
+  if (!check.ok) {
+    await logFailure(check.error);
+    return res.status(400).json({ error: check.error });
+  }
 
-  // Capture the existing document (if any) BEFORE we overwrite it, so we
-  // can delete the old physical file after the new one is safely saved —
-  // otherwise re-uploads silently orphan the previous file on disk forever.
-  const existingDocument = await prisma.document.findUnique({
-    where: { studentId_documentTypeId: { studentId: req.student.id, documentTypeId } },
-  });
+  try {
+    // Capture the existing document (if any) BEFORE we overwrite it, so we
+    // can delete the old physical file after the new one is safely saved —
+    // otherwise re-uploads silently orphan the previous file on disk forever.
+    const existingDocument = await prisma.document.findUnique({
+      where: { studentId_documentTypeId: { studentId: req.student.id, documentTypeId } },
+    });
 
-  const { storedFilename, filePath, sizeBytes } = await saveDocumentFile({
-    sessionId: req.student.sessionId,
-    admissionNo: req.student.admissionNo,
-    documentTypeId,
-    buffer: file.buffer,
-    mimeType: file.mimetype,
-  });
-
-  const document = await prisma.document.upsert({
-    where: { studentId_documentTypeId: { studentId: req.student.id, documentTypeId } },
-    update: {
-      originalFilename: file.originalname,
-      storedFilename,
-      filePath,
-      mimeType: file.mimetype,
-      sizeBytes,
-      uploadedAt: new Date(),
-    },
-    create: {
-      studentId: req.student.id,
+    const { storedFilename, filePath, sizeBytes } = await saveDocumentFile({
+      sessionId: req.student.sessionId,
+      admissionNo: req.student.admissionNo,
       documentTypeId,
-      originalFilename: file.originalname,
-      storedFilename,
-      filePath,
+      buffer: file.buffer,
       mimeType: file.mimetype,
-      sizeBytes,
-    },
-  });
+    });
 
-  // New file is safely on disk and the DB row is updated — now it's safe
-  // to remove the old physical file.
-  if (existingDocument && existingDocument.filePath !== filePath) {
-    await deleteDocumentFile(existingDocument.filePath);
+    const document = await prisma.document.upsert({
+      where: { studentId_documentTypeId: { studentId: req.student.id, documentTypeId } },
+      update: {
+        originalFilename: file.originalname,
+        storedFilename,
+        filePath,
+        mimeType: file.mimetype,
+        sizeBytes,
+        uploadedAt: new Date(),
+      },
+      create: {
+        studentId: req.student.id,
+        documentTypeId,
+        originalFilename: file.originalname,
+        storedFilename,
+        filePath,
+        mimeType: file.mimetype,
+        sizeBytes,
+      },
+    });
+
+    // New file is safely on disk and the DB row is updated — now it's safe
+    // to remove the old physical file.
+    if (existingDocument && existingDocument.filePath !== filePath) {
+      await deleteDocumentFile(existingDocument.filePath);
+    }
+
+    if (student.status === 'PENDING' && (await isFullySubmitted(student.id))) {
+      await prisma.student.update({ where: { id: student.id }, data: { status: 'SUBMITTED' } });
+    }
+
+    res.status(201).json({ message: 'Uploaded', documentId: document.id });
+  } catch (err) {
+    console.error('[student/upload]', err);
+    await logFailure(`Server error while saving the file: ${err.message}`);
+    res.status(500).json({ error: 'Could not save your file right now. Please try again.' });
   }
-
-  if (student.status === 'PENDING' && (await isFullySubmitted(student.id))) {
-    await prisma.student.update({ where: { id: student.id }, data: { status: 'SUBMITTED' } });
-  }
-
-  res.status(201).json({ message: 'Uploaded', documentId: document.id });
 });
 
 // --- Preview a student's own uploaded document inline (not a forced

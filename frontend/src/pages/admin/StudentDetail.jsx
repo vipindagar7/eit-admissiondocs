@@ -335,6 +335,36 @@ export default function AdminStudentDetail() {
         </CardContent>
       </Card>
 
+      {student.uploadAttemptLogs && student.uploadAttemptLogs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Upload Issues</CardTitle>
+            <CardDescription>Failed upload attempts logged automatically — exactly what the student's browser/file triggered.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {student.uploadAttemptLogs.map((log) => {
+              const docType = documentTypes.find((dt) => dt.id === log.documentTypeId);
+              return (
+                <div key={log.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-gray-900">{docType?.name || 'Unknown document'}</p>
+                    <p className="text-xs text-gray-400">{new Date(log.createdAt).toLocaleString()}</p>
+                  </div>
+                  <p className="mt-1 text-amber-800">{log.errorMessage}</p>
+                  {log.attemptedFilename && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Tried: {log.attemptedFilename}
+                      {log.attemptedMimeType && ` · ${log.attemptedMimeType}`}
+                      {log.attemptedSizeBytes && ` · ${(log.attemptedSizeBytes / 1024).toFixed(0)} KB`}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {student.answers && student.answers.length > 0 && (
         <Card>
           <CardHeader>

@@ -510,12 +510,12 @@ adminRouter.get('/students', requireStaffAuth, async (req, res) => {
       ...(blocked !== undefined ? { blocked: blocked === 'true' } : {}),
       ...(search
         ? {
-          OR: [
-            { name: { contains: String(search), mode: 'insensitive' } },
-            { admissionNo: { contains: String(search), mode: 'insensitive' } },
-            { phone: { contains: String(search) } },
-          ],
-        }
+            OR: [
+              { name: { contains: String(search), mode: 'insensitive' } },
+              { admissionNo: { contains: String(search), mode: 'insensitive' } },
+              { phone: { contains: String(search) } },
+            ],
+          }
         : {}),
     },
     include: { _count: { select: { documents: true } }, session: true },
@@ -563,6 +563,7 @@ adminRouter.get('/students/:id', requireStaffAuth, async (req, res) => {
       documents: { include: { documentType: true } },
       answers: { include: { question: true } },
       statusLogs: { orderBy: { changedAt: 'desc' } },
+      uploadAttemptLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
       session: true,
     },
   });
