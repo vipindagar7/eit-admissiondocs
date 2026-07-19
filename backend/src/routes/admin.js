@@ -498,6 +498,35 @@ adminRouter.delete('/access-requests/:id', requireStaffAuth, requireStaffRole('A
 });
 
 // ============================================================
+// UPLOAD ISSUES — every failed student upload attempt, across all
+// students, so admin can see who's stuck without hunting through each
+// student's page one by one.
+// ============================================================
+adminRouter.get('/upload-issues', requireStaffAuth, async (req, res) => {
+  const [logs, documentTypes] = await Promise.all([
+    prisma.uploadAttemptLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        student: { select: { id: true, name: true, fileNo: true, admissionNo: true, phone: true } },
+      },
+    }),
+    prisma.documentType.findMany({ select: { id: true, name: true } }),
+  ]);
+
+  // documentTypeId on the log is a plain column (no hard FK — see schema
+  // comment), so resolve the name separately rather than via `include`.
+  const docTypeNameById = new Map(documentTypes.map((dt) => [dt.id, dt.name]));
+
+  const result = logs.map((log) => ({
+    ...log,
+    documentTypeName: docTypeNameById.get(log.documentTypeId) || 'Unknown document',
+  }));
+
+  res.json({ logs: result });
+});
+
+// ============================================================
 // STUDENTS — list/search, detail, block/unblock (individual + bulk), status
 // ============================================================
 adminRouter.get('/students', requireStaffAuth, async (req, res) => {

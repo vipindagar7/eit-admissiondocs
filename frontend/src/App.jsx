@@ -9,6 +9,7 @@ import AdminDocumentTypes from './pages/admin/DocumentTypes.jsx';
 import AdminFormQuestions from './pages/admin/FormQuestions.jsx';
 import AdminNotices from './pages/admin/Notices.jsx';
 import AdminAccessRequests from './pages/admin/AccessRequests.jsx';
+import AdminUploadIssues from './pages/admin/UploadIssues.jsx';
 import AdminStaff from './pages/admin/Staff.jsx';
 import AdminSettings from './pages/admin/Settings.jsx';
 import StaffLayout from './components/StaffLayout.jsx';
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/admin/form-questions" element={<AdminFormQuestions />} />
           <Route path="/admin/notices" element={<AdminNotices />} />
           <Route path="/admin/access-requests" element={<AdminAccessRequests />} />
+          <Route path="/admin/upload-issues" element={<AdminUploadIssues />} />
           <Route path="/admin/staff" element={<AdminStaff />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
         </Route>

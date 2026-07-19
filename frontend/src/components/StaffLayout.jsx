@@ -10,6 +10,7 @@ import { cn } from '../lib/utils.js';
 const NAV_ITEMS = [
   { to: '/admin/students', label: 'Students' },
   { to: '/admin/access-requests', label: 'Requests' },
+  { to: '/admin/upload-issues', label: 'Upload Issues' },
   { to: '/admin/sessions', label: 'Sessions', adminOnly: true },
   { to: '/admin/document-types', label: 'Documents', adminOnly: true },
   { to: '/admin/form-questions', label: 'Questions', adminOnly: true },
