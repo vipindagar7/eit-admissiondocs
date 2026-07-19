@@ -23,7 +23,9 @@ studentRouter.post('/request-otp', async (req, res) => {
   // Deliberate product decision: tell the student directly if their
   // number isn't registered (rather than the vague "if registered..."
   // message), so they can request access instead of being stuck.
-  const student = await prisma.student.findFirst({ where: { phone } });
+  // Matches either Contact No1 or Contact No2 — students may know
+  // themselves by whichever number they entered on the admission form.
+  const student = await prisma.student.findFirst({ where: { OR: [{ phone }, { phone2: phone }] } });
   if (!student) {
     return res.status(404).json({ code: 'NOT_FOUND', error: 'This mobile number is not registered.' });
   }
@@ -66,8 +68,12 @@ studentRouter.post('/verify-otp', async (req, res) => {
   const { phone, otp } = parsed.data;
 
   // If the same phone exists in more than one session, prefer the most
-  // recently created (latest admission cycle) one.
-  const student = await prisma.student.findFirst({ where: { phone }, orderBy: { createdAt: 'desc' } });
+  // recently created (latest admission cycle) one. Matches either
+  // Contact No1 or Contact No2, same as the request-otp lookup.
+  const student = await prisma.student.findFirst({
+    where: { OR: [{ phone }, { phone2: phone }] },
+    orderBy: { createdAt: 'desc' },
+  });
   if (!student) return res.status(401).json({ error: 'Invalid OTP' });
 
   try {

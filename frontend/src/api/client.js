@@ -5,10 +5,31 @@
 // is deployed on a different origin than the backend.
 const BASE = `${import.meta.env.VITE_API_BASE ?? ''}/api`;
 
-// These admin endpoints return 401 for reasons OTHER than an
-// expired/invalid session (wrong password, wrong OTP) — a redirect there
-// would kick the user out of the login screen they're actively using.
-const ADMIN_AUTH_FLOW_ENDPOINTS = ['/admin/login', '/admin/login/verify-otp', '/admin/unlock'];
+// These endpoints return 401 for reasons OTHER than an expired/invalid
+// session (wrong password, wrong/expired OTP, blocked account) — a
+// redirect there would kick the user out of the login screen they're
+// actively using, or mask a "you're blocked" message they need to see.
+const AUTH_FLOW_ENDPOINTS = [
+  '/admin/login',
+  '/admin/login/verify-otp',
+  '/admin/unlock',
+  '/student/request-otp',
+  '/student/verify-otp',
+  '/student/access-requests',
+];
+
+// If a 401 comes back on a real session-bound request (not the login
+// flow itself), the token is missing/expired — bounce to the matching
+// login screen instead of leaving a raw error on the page.
+function redirectToLoginIfSessionExpired(path, status) {
+  if (status !== 401 || AUTH_FLOW_ENDPOINTS.includes(path)) return;
+
+  if (path.startsWith('/admin') && !window.location.pathname.startsWith('/admin/login')) {
+    window.location.href = '/admin/login';
+  } else if (path.startsWith('/student') && !window.location.pathname.startsWith('/student/login')) {
+    window.location.href = '/student/login';
+  }
+}
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -21,14 +42,7 @@ async function request(path, options = {}) {
   const data = isJson ? await res.json() : await res.blob();
 
   if (!res.ok) {
-    if (
-      res.status === 401 &&
-      path.startsWith('/admin') &&
-      !ADMIN_AUTH_FLOW_ENDPOINTS.includes(path) &&
-      !window.location.pathname.startsWith('/admin/login')
-    ) {
-      window.location.href = '/admin/login';
-    }
+    redirectToLoginIfSessionExpired(path, res.status);
 
     const message = isJson ? data?.error || 'Request failed' : 'Request failed';
     const err = new Error(message);
@@ -50,9 +64,7 @@ export const api = {
   async download(path) {
     const res = await fetch(`${BASE}${path}`, { credentials: 'include' });
     if (!res.ok) {
-      if (res.status === 401 && path.startsWith('/admin') && !window.location.pathname.startsWith('/admin/login')) {
-        window.location.href = '/admin/login';
-      }
+      redirectToLoginIfSessionExpired(path, res.status);
       throw new Error('Download failed');
     }
     const blob = await res.blob();
