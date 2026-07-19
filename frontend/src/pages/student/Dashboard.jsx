@@ -257,7 +257,7 @@ export default function StudentDashboard() {
         </Card>
 
         {/* Preferences (student's own choice) */}
-        <Card {...fadeIn(75)}>
+        {/* <Card {...fadeIn(75)}>
           <CardHeader>
             <CardTitle>Your Course Preferences</CardTitle>
             <CardDescription>Choose up to three, in order of preference — separate from the course allotted above.</CardDescription>
@@ -279,7 +279,7 @@ export default function StudentDashboard() {
               ))}
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
 
         {/* Questions */}
         {questions.length > 0 && (
@@ -387,7 +387,7 @@ export default function StudentDashboard() {
           </CardContent>
         </Card>
 
-        {/* Review summary */}
+        {/* Review summary
         <Card {...fadeIn(300)}>
           <button onClick={() => setShowReview((v) => !v)} className="flex w-full items-center justify-between p-5 text-left">
             <div>
@@ -437,7 +437,7 @@ export default function StudentDashboard() {
               </div>
             </div>
           )}
-        </Card>
+        </Card> */}
       </main>
 
       {preview && (
