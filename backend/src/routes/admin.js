@@ -510,12 +510,12 @@ adminRouter.get('/students', requireStaffAuth, async (req, res) => {
       ...(blocked !== undefined ? { blocked: blocked === 'true' } : {}),
       ...(search
         ? {
-            OR: [
-              { name: { contains: String(search), mode: 'insensitive' } },
-              { admissionNo: { contains: String(search), mode: 'insensitive' } },
-              { phone: { contains: String(search) } },
-            ],
-          }
+          OR: [
+            { name: { contains: String(search), mode: 'insensitive' } },
+            { admissionNo: { contains: String(search), mode: 'insensitive' } },
+            { phone: { contains: String(search) } },
+          ],
+        }
         : {}),
     },
     include: { _count: { select: { documents: true } }, session: true },
@@ -732,6 +732,65 @@ adminRouter.get('/documents/:id/download', requireStaffAuth, async (req, res) =>
     console.error('[admin/download]', err);
     res.status(500).json({ error: 'Could not read file' });
   }
+});
+
+// --- Upload a document on a student's behalf (admin only) — for a
+// document type they haven't submitted yet ("missing"). Also works as
+// an upsert if one already exists, mirroring /replace's behavior. ---
+adminRouter.post('/students/:studentId/documents/:documentTypeId', requireStaffAuth, requireStaffRole('ADMIN'), upload.single('file'), async (req, res) => {
+  const student = await prisma.student.findUnique({ where: { id: req.params.studentId } });
+  if (!student) return res.status(404).json({ error: 'Student not found' });
+
+  const docType = await prisma.documentType.findUnique({ where: { id: req.params.documentTypeId } });
+  if (!docType) return res.status(404).json({ error: 'Unknown document type' });
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!verifyMagicBytes(file.buffer, file.mimetype)) {
+    return res.status(400).json({ error: 'File content does not match its declared type' });
+  }
+
+  const check = validateAgainstDocumentType(docType, { mimeType: file.mimetype, sizeBytes: file.size });
+  if (!check.ok) return res.status(400).json({ error: check.error });
+
+  const existingDocument = await prisma.document.findUnique({
+    where: { studentId_documentTypeId: { studentId: student.id, documentTypeId: docType.id } },
+  });
+
+  const { storedFilename, filePath, sizeBytes } = await saveDocumentFile({
+    sessionId: student.sessionId,
+    admissionNo: student.admissionNo,
+    documentTypeId: docType.id,
+    buffer: file.buffer,
+    mimeType: file.mimetype,
+  });
+
+  const document = await prisma.document.upsert({
+    where: { studentId_documentTypeId: { studentId: student.id, documentTypeId: docType.id } },
+    update: {
+      originalFilename: file.originalname,
+      storedFilename,
+      filePath,
+      mimeType: file.mimetype,
+      sizeBytes,
+      uploadedAt: new Date(),
+    },
+    create: {
+      studentId: student.id,
+      documentTypeId: docType.id,
+      originalFilename: file.originalname,
+      storedFilename,
+      filePath,
+      mimeType: file.mimetype,
+      sizeBytes,
+    },
+  });
+
+  if (existingDocument && existingDocument.filePath !== filePath) {
+    await deleteDocumentFile(existingDocument.filePath);
+  }
+
+  res.status(201).json({ message: 'Document uploaded', documentId: document.id });
 });
 
 // --- Delete a student's uploaded document ---

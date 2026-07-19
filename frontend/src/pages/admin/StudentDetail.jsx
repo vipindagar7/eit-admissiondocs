@@ -115,6 +115,21 @@ export default function AdminStudentDetail() {
     }
   }
 
+  async function handleUploadMissing(documentTypeId, file) {
+    setBusy(true);
+    setError('');
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      await api.post(`/admin/students/${id}/documents/${documentTypeId}`, form);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleStatusChange(status) {
     setBusy(true);
     try {
@@ -296,7 +311,21 @@ export default function AdminStudentDetail() {
                         </p>
                         <p className="text-xs text-gray-400">Not submitted yet</p>
                       </div>
-                      <Badge variant="gray">Missing</Badge>
+                      <div className="flex items-center gap-2">
+                        {isAdmin && (
+                          <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-brand-600 px-3 text-xs font-medium text-brand-600 hover:bg-brand-50">
+                            Upload for student
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              className="hidden"
+                              disabled={busy}
+                              onChange={(e) => e.target.files[0] && handleUploadMissing(dt.id, e.target.files[0])}
+                            />
+                          </label>
+                        )}
+                        <Badge variant="gray">Missing</Badge>
+                      </div>
                     </div>
                   ))}
                 </>
