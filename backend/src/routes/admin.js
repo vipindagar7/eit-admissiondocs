@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import path from 'node:path';
+import archiver from 'archiver';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -592,6 +594,62 @@ adminRouter.get('/students/export', requireStaffAuth, async (req, res) => {
     console.error('[admin/students/export]', err);
     res.status(500).json({ error: 'Could not generate export' });
   }
+});
+
+// --- Bulk download ALL uploaded documents as a single ZIP (admin only —
+// this is raw student PII in bulk, kept more restricted than the Excel
+// export). One folder per student named "name@fileNo", each file inside
+// named "documentTypeName@fileNo.ext". Streamed directly to the response
+// so large document sets don't get buffered fully in memory. ---
+function safeZipName(value) {
+  return String(value || '').replace(/[\\/:*?"<>|]/g, '_').trim() || 'unknown';
+}
+
+adminRouter.get('/documents/export-zip', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+  const { status, sessionId, blocked } = req.query;
+
+  const students = await prisma.student.findMany({
+    where: {
+      ...(status ? { status } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(blocked !== undefined ? { blocked: blocked === 'true' } : {}),
+    },
+    include: { documents: { include: { documentType: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="student_documents.zip"');
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('[admin/documents/export-zip]', err);
+    if (!res.headersSent) res.status(500);
+    res.end();
+  });
+  archive.pipe(res);
+
+  const uploadRoot = path.resolve(env.upload.root);
+
+  for (const student of students) {
+    if (student.documents.length === 0) continue;
+
+    const fileNoOrAdmission = student.fileNo || student.admissionNo;
+    const folderName = `${safeZipName(student.name)}@${safeZipName(fileNoOrAdmission)}`;
+
+    for (const doc of student.documents) {
+      const resolvedPath = path.resolve(doc.filePath);
+      // Defense in depth: never add a file that somehow resolves outside
+      // the upload root, same guard used everywhere else files are read.
+      if (!resolvedPath.startsWith(uploadRoot + path.sep)) continue;
+
+      const ext = path.extname(doc.originalFilename) || '';
+      const entryName = `${safeZipName(doc.documentType.name)}@${safeZipName(fileNoOrAdmission)}${ext}`;
+      archive.file(resolvedPath, { name: `${folderName}/${entryName}` });
+    }
+  }
+
+  await archive.finalize();
 });
 
 adminRouter.get('/students/:id', requireStaffAuth, async (req, res) => {

@@ -28,6 +28,7 @@ export default function AdminStudents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -101,6 +102,27 @@ export default function AdminStudents() {
     }
   }
 
+  async function handleDownloadZip() {
+    setError('');
+    setZipBusy(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (statusFilter) params.set('status', statusFilter);
+      const { blob } = await api.download(`/admin/documents/export-zip?${params}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'student_documents.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setZipBusy(false);
+    }
+  }
+
   return (
     <div className="animate-in fade-in duration-300">
       <div className="mb-1 flex items-center justify-between">
@@ -108,9 +130,16 @@ export default function AdminStudents() {
           <h1 className="text-lg font-semibold text-gray-900">Students</h1>
           <p className="text-sm text-gray-500">{students.length} in current view</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport}>
-          Export to Excel
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            Export to Excel
+          </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={handleDownloadZip} disabled={zipBusy}>
+              {zipBusy ? 'Preparing ZIP...' : 'Download All Documents (ZIP)'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
