@@ -180,9 +180,30 @@ export default function AdminSessions() {
 
       {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</p>}
       {importResult && (
-        <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">
-          Import complete: {importResult.created} created, {importResult.skipped} skipped, {importResult.invalid} invalid rows.
-        </p>
+        <div className="space-y-2">
+          <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+            Import complete: {importResult.created} created, {importResult.skipped} skipped, {importResult.invalid} invalid rows.
+          </p>
+          {importResult.failures?.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/40">
+              <CardHeader>
+                <CardTitle>Rows that need fixing</CardTitle>
+                <CardDescription>
+                  Fix these rows in your file and re-run the import — rows that already succeeded will just be skipped, not duplicated.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {importResult.failures.map((f, i) => (
+                  <div key={i} className="rounded-md border border-amber-200 bg-white p-3 text-sm">
+                    <p className="font-medium text-gray-900">Row {f.row}</p>
+                    <p className="mt-0.5 text-amber-800">{f.reason}</p>
+                    {f.raw && <p className="mt-0.5 truncate text-xs text-gray-500">Data: {f.raw}</p>}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       <div className="space-y-3">

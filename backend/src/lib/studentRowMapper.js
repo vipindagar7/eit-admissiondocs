@@ -53,9 +53,9 @@ export function mapHeadersToFields(headers) {
 
 /**
  * Builds a Student data object from one data row, given the field-key
- * array produced by mapHeadersToFields(). Returns null if the row is
- * missing a usable admission number, name, or phone (the minimum we
- * need to create a Student).
+ * array produced by mapHeadersToFields(). Returns { ok: true, data } or
+ * { ok: false, error } with a specific reason — so bulk import can tell
+ * the admin exactly why a row was rejected, not just "invalid".
  */
 export function rowArrayToStudent(fieldKeys, rowValues) {
   const data = {};
@@ -80,7 +80,14 @@ export function rowArrayToStudent(fieldKeys, rowValues) {
   // "Admission No" column is present.
   if (!data.admissionNo && data.fileNo) data.admissionNo = data.fileNo;
 
-  if (!data.admissionNo || !data.name || !data.phone) return null;
+  const missing = [];
+  if (!data.admissionNo) missing.push('File No. / Admission No.');
+  if (!data.name) missing.push('Student Name');
+  if (!data.phone) missing.push('Contact No1');
 
-  return data;
+  if (missing.length > 0) {
+    return { ok: false, error: `Missing required field(s): ${missing.join(', ')}` };
+  }
+
+  return { ok: true, data };
 }

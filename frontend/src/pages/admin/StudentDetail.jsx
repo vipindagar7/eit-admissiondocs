@@ -23,6 +23,7 @@ const INFO_FIELDS = [
   { key: 'srNo', label: 'SR NO', type: 'number' },
   { key: 'fileNo', label: 'File No.' },
   { key: 'fatherName', label: 'Father Name' },
+  { key: 'phone', label: 'Contact No1' },
   { key: 'phone2', label: 'Contact No2' },
   { key: 'branch', label: 'Branch' },
   { key: 'preference1', label: 'Preference 1' },
@@ -384,37 +385,26 @@ export default function AdminStudentDetail() {
       <Card>
         <CardHeader>
           <CardTitle>Admission Details</CardTitle>
-          <CardDescription>{isAdmin ? 'All optional — fill in whatever applies.' : 'Read-only — only admins can edit these.'}</CardDescription>
+          <CardDescription>All optional — fill in whatever applies.</CardDescription>
         </CardHeader>
         <CardContent>
-          {isAdmin ? (
-            <form onSubmit={handleSaveInfo} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {INFO_FIELDS.map((f) => (
-                <div key={f.key}>
-                  <label className="text-xs text-gray-500">{f.label}</label>
-                  <Input
-                    type={f.type || 'text'}
-                    value={infoForm[f.key] ?? ''}
-                    onChange={(e) => setInfoForm({ ...infoForm, [f.key]: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-              ))}
-              <div className="sm:col-span-3">
-                {infoMessage && <p className="mb-2 text-sm text-green-700">{infoMessage}</p>}
-                <Button disabled={busy}>Save admission details</Button>
+          <form onSubmit={handleSaveInfo} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {INFO_FIELDS.map((f) => (
+              <div key={f.key}>
+                <label className="text-xs text-gray-500">{f.label}</label>
+                <Input
+                  type={f.type || 'text'}
+                  value={infoForm[f.key] ?? ''}
+                  onChange={(e) => setInfoForm({ ...infoForm, [f.key]: e.target.value })}
+                  className="mt-1"
+                />
               </div>
-            </form>
-          ) : (
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-3">
-              {INFO_FIELDS.map((f) => (
-                <div key={f.key} className="text-sm">
-                  <dt className="text-xs text-gray-500">{f.label}</dt>
-                  <dd className="font-medium text-gray-900">{student[f.key] || '—'}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+            ))}
+            <div className="sm:col-span-3">
+              {infoMessage && <p className="mb-2 text-sm text-green-700">{infoMessage}</p>}
+              <Button disabled={busy}>Save admission details</Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
 

@@ -234,7 +234,7 @@ const createStudentSchema = z.object({
   feeStatus: z.string().optional(),
   partAcademicFee: z.string().optional(),
 });
-adminRouter.post('/sessions/:id/students', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+adminRouter.post('/sessions/:id/students', requireStaffAuth, async (req, res) => {
   const parsed = createStudentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid student data' });
 
@@ -260,6 +260,7 @@ const studentInfoSchema = z.object({
   srNo: z.coerce.number().int().optional(),
   fileNo: z.string().optional(),
   fatherName: z.string().optional(),
+  phone: z.string().min(8).max(15).optional(),
   phone2: z.string().optional(),
   preference1: z.string().optional(),
   preference2: z.string().optional(),
@@ -278,12 +279,20 @@ const studentInfoSchema = z.object({
   feeStatus: z.string().optional(),
   partAcademicFee: z.string().optional(),
 });
-adminRouter.patch('/students/:id/info', requireStaffAuth, requireStaffRole('ADMIN'), async (req, res) => {
+adminRouter.patch('/students/:id/info', requireStaffAuth, async (req, res) => {
   const parsed = studentInfoSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
 
-  const student = await prisma.student.update({ where: { id: req.params.id }, data: parsed.data });
-  res.json({ student });
+  try {
+    const student = await prisma.student.update({ where: { id: req.params.id }, data: parsed.data });
+    res.json({ student });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Another student in this session already has that Contact No1 (or File No.)' });
+    }
+    console.error('[admin/students/info]', err);
+    res.status(500).json({ error: 'Could not update student' });
+  }
 });
 
 // ============================================================
